@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+crawler/node_modules/
+crawler/scripts/mall/output/
+crawler/dist/
+crawler/scripts/mall/accounts.json
+crawler/scripts/mall/config.json

@@ -1,0 +1,12 @@
+[
+  {
+    "accountId": "account-01",
+    "username": "your_id_1",
+    "password": "your_password_1"
+  },
+  {
+    "accountId": "account-02",
+    "username": "your_id_2",
+    "password": "your_password_2"
+  }
+]

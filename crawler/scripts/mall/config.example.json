@@ -1,0 +1,85 @@
+{
+  "maxPagesPerTab": 3,
+  "timeoutMs": 20000,
+  "headless": true,
+  "slowMoMs": 0,
+  "debug": {
+    "enabled": true,
+    "verbose": true,
+    "saveArtifactsOnError": true,
+    "saveArtifactsOnTrackingMiss": true,
+    "outputSubdir": "debug-latest"
+  },
+  "dateRange": {
+    "enabled": true,
+    "lookbackDays": 89
+  },
+  "urls": {
+    "login": "https://example.com/member/login",
+    "orderStatus": "https://example.com/mypage/order-status",
+    "cancelStatus": "https://example.com/mypage/cancel-status",
+    "orderTabs": {
+      "productReady": "https://example.com/mypage/order/list?doFlag=25&fromDate=20260101&toDate=20260331",
+      "shippingReady": "https://example.com/mypage/order/list?doFlag=30&fromDate=20260101&toDate=20260331",
+      "inTransit": "https://example.com/mypage/order/list?doFlag=40&fromDate=20260101&toDate=20260331"
+    }
+  },
+  "selectors": {
+    "login": {
+      "tLoginButton": "button.sns-tword",
+      "idInput": "input[name='member_id']",
+      "passwordInput": "input[name='member_passwd']",
+      "submitButton": "button[type='submit']",
+      "postLoginReady": "a[href*='logout']"
+    },
+    "orderStatus": {
+      "tabButtons": {
+        "productReady": "text=상품준비",
+        "shippingReady": "text=배송준비",
+        "inTransit": "text=배송중",
+        "delivered": "text=배송완료"
+      },
+      "list": {
+        "row": "table tbody tr",
+        "emptyHint": "text=조회된 주문이 없습니다"
+      },
+      "fields": {
+        "orderNumber": ".order_num",
+        "productName": ".prd_name",
+        "statusText": ".order_state"
+      },
+      "trackingNumberCandidates": [
+        ".invoice_no",
+        "a[href*='invoice']",
+        "button:has-text('송장')"
+      ],
+      "shippingLayer": {
+        "openButtonInRowSelector": "text=배송현황조회",
+        "modalRootSelector": ".ui-dialog:has-text(\"배송조회\"), .modal:has-text(\"배송조회\"), .layer:has-text(\"배송조회\")",
+        "trackingNumberCandidates": [
+          "button:has-text(\"집화처리\")",
+          "[class*=\"invoice\"]",
+          "[class*=\"waybill\"]",
+          "[data-invoice-no]"
+        ],
+        "closeButtonSelector": "button:has-text(\"닫기\"), button[aria-label*=\"닫기\"], .ui-dialog-titlebar-close",
+        "waitTimeoutMs": 5000
+      }
+    },
+    "cancelStatus": {
+      "list": {
+        "row": "article.history_pro table tbody tr",
+        "emptyHint": "text=조회된 취소/교환/반품 내역이 없습니다"
+      },
+      "fields": {
+        "orderNumber": "span:has-text(\"[주문번호\")",
+        "productName": "td:nth-child(2) > a > span",
+        "statusText": "td.now > p"
+      }
+    },
+    "pagination": {
+      "pageButtonTemplate": "a:has-text('{page}')",
+      "activePage": ".paginate a.current, .paginate strong"
+    }
+  }
+}

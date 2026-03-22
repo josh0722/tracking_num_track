@@ -1,0 +1,18 @@
+{
+  "name": "tracking-num-track-crawler",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "scrape:mall": "tsx scripts/mall/scrapeMallShipments.ts",
+    "fill:sheet2-delivery": "python3 scripts/mall/fill_sheet2_delivery.py",
+    "run:manual-updater": "python3 scripts/mall/manual_update_app.py",
+    "build:manual-updater-app": "bash scripts/mall/build_manual_updater_app.sh",
+    "build:windows-bundle": "powershell -ExecutionPolicy Bypass -File scripts/mall/build_windows_bundle.ps1"
+  },
+  "devDependencies": {
+    "p-limit": "^6.1.0",
+    "playwright": "^1.58.2",
+    "tsx": "^4.20.6"
+  }
+}
