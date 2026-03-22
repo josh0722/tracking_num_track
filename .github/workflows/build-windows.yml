@@ -31,8 +31,8 @@ jobs:
       - name: Zip bundle
         shell: pwsh
         run: |
-          Rename-Item crawler/dist/windows-bundle ExcelDeliveryUpdater
-          Compress-Archive -Path crawler/dist/ExcelDeliveryUpdater -DestinationPath ExcelDeliveryUpdater-windows.zip
+          Copy-Item crawler/dist/windows-bundle ExcelDeliveryUpdater -Recurse
+          Compress-Archive -Path ExcelDeliveryUpdater -DestinationPath ExcelDeliveryUpdater-windows.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
