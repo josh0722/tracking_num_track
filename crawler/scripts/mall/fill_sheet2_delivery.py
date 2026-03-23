@@ -504,10 +504,17 @@ def main() -> None:
     else:
         output_path = excel_path
 
-    wb = load_workbook(excel_path)
-    sheet = find_sheet1(wb)
-    targets, skipped_prefilled_rows = collect_targets(sheet)
-    wb.close()
+    try:
+        wb = load_workbook(excel_path)
+        sheet = find_sheet1(wb)
+        targets, skipped_prefilled_rows = collect_targets(sheet)
+        wb.close()
+    except Exception as exc:
+        raise RuntimeError(
+            f"엑셀 파일을 열 수 없습니다: {excel_path}\n"
+            f"파일이 손상되었거나 다른 프로그램에서 사용 중일 수 있습니다.\n"
+            f"상세: {exc}"
+        ) from exc
 
     if not targets:
         if output_path != excel_path:
@@ -556,7 +563,12 @@ def main() -> None:
                 cwd=repo_root,
                 env=env,
                 check=True,
+                timeout=1200,
             )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "크롤링 시간 초과 (20분): 프로세스가 응답하지 않아 종료했습니다."
+            ) from exc
         except subprocess.CalledProcessError as exc:
             if exc.returncode == 127:
                 raise RuntimeError(
@@ -575,7 +587,14 @@ def main() -> None:
         if not result_json_path.exists():
             raise FileNotFoundError(f"results json을 찾지 못했습니다: {result_json_path}")
 
-    scraped_rows = json.loads(result_json_path.read_text(encoding="utf-8"))
+    try:
+        scraped_rows = json.loads(result_json_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise RuntimeError(
+            f"크롤링 결과 JSON 파싱 실패: {result_json_path}\n"
+            f"파일이 손상되었을 수 있습니다. 다시 실행해주세요.\n"
+            f"상세: {exc}"
+        ) from exc
 
     canceled_keys, order_map = merge_scrape_results(scraped_rows, account_id_to_cred)
 

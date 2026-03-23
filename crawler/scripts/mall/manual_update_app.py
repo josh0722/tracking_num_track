@@ -23,6 +23,7 @@ class ManualUpdateApp:
         self.fill_script = self.repo_root / "scripts" / "mall" / "fill_sheet2_delivery.py"
         self.log_queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self.running = False
+        self._process: subprocess.Popen | None = None
 
         self.input_var = tk.StringVar()
         self.output_var = tk.StringVar()
@@ -30,6 +31,7 @@ class ManualUpdateApp:
 
         self._build_ui()
         self.root.after(100, self._poll_logs)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _detect_repo_root(self) -> Path:
         env_root = os.environ.get("MALL_REPO_ROOT", "").strip()
@@ -216,6 +218,26 @@ class ManualUpdateApp:
         self.run_button.configure(state="disabled" if running else "normal")
         self.status_var.set("실행 중..." if running else "대기 중")
 
+    def _on_close(self) -> None:
+        proc = self._process
+        if proc is not None and proc.poll() is None:
+            try:
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                else:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self.root.destroy()
+
     def _start_run(self) -> None:
         if self.running:
             return
@@ -315,7 +337,7 @@ class ManualUpdateApp:
                 self.log_queue.put(("log", f"[INFO] worker: {worker_exe}"))
             else:
                 self.log_queue.put(("log", f"[INFO] python: {cmd[0]}"))
-            process = subprocess.Popen(
+            self._process = subprocess.Popen(
                 cmd,
                 cwd=self.repo_root,
                 env=env,
@@ -327,22 +349,31 @@ class ManualUpdateApp:
             self.log_queue.put(("error", f"프로그램 실행 실패: {exc}"))
             return
 
-        assert process.stdout is not None
-        last_error_line = ""
-        for line in process.stdout:
-            clean = line.rstrip()
-            self.log_queue.put(("log", clean))
-            if clean.startswith("[ERROR]"):
-                last_error_line = clean
+        try:
+            assert self._process.stdout is not None
+            last_error_line = ""
+            for line in self._process.stdout:
+                clean = line.rstrip()
+                self.log_queue.put(("log", clean))
+                if clean.startswith("[ERROR]"):
+                    last_error_line = clean
 
-        return_code = process.wait()
-        if return_code == 0:
-            self.log_queue.put(("done", str(output_path)))
-        else:
-            if last_error_line:
-                self.log_queue.put(("error", f"{last_error_line} (exit code: {return_code})"))
+            try:
+                return_code = self._process.wait(timeout=1260)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                self.log_queue.put(("error", "프로세스가 응답하지 않아 강제 종료했습니다."))
+                return
+
+            if return_code == 0:
+                self.log_queue.put(("done", str(output_path)))
             else:
-                self.log_queue.put(("error", f"업데이트 실패 (exit code: {return_code})"))
+                if last_error_line:
+                    self.log_queue.put(("error", f"{last_error_line} (exit code: {return_code})"))
+                else:
+                    self.log_queue.put(("error", f"업데이트 실패 (exit code: {return_code})"))
+        finally:
+            self._process = None
 
     def _poll_logs(self) -> None:
         while True:

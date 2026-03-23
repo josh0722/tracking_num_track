@@ -4,6 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright';
 import pLimit from 'p-limit';
 
+// 안전망: Playwright 내부 등에서 발생할 수 있는 미처리 rejection이 프로세스를 크래시하지 않도록 방지
+process.on('unhandledRejection', (reason) => {
+  console.error('[WARN] unhandled rejection (suppressed):', reason);
+});
+
 type Account = {
   accountId: string;
   username: string;
@@ -1361,9 +1366,12 @@ async function scrapeAccount(params: {
     return [...tabRows, ...cancelRows];
   } finally {
     await Promise.race([
-      context.close(),
-      new Promise<void>((resolve) => setTimeout(resolve, 10_000)),
-    ]).catch(() => undefined);
+      context.close().catch(() => undefined),
+      new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, 10_000);
+        t.unref();
+      }),
+    ]);
   }
 }
 
@@ -1384,19 +1392,26 @@ async function scrapeAccountWithRetry(
         debugLog(debug, `retry attempt=${attempt} account=${account.accountId}`);
       }
       debugLog(debug, `start account=${account.accountId}`);
-      const rows = await Promise.race([
-        scrapeAccount({ browser, account, config, debug, targetOrderFilter }),
-        new Promise<never>((_, reject) => {
-          const t = setTimeout(() => reject(new Error('account timeout (180s)')), 180_000);
-          t.unref();
-        }),
-      ]);
+      const scrapePromise = scrapeAccount({ browser, account, config, debug, targetOrderFilter });
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const t = setTimeout(() => reject(new Error('account timeout (180s)')), 180_000);
+        t.unref();
+      });
+      // race 패자의 reject가 unhandled가 되지 않도록 양쪽 모두 catch 부착
+      scrapePromise.catch(() => undefined);
+      timeoutPromise.catch(() => undefined);
+      const rows = await Promise.race([scrapePromise, timeoutPromise]);
       console.log(`[OK] ${account.accountId} - collected ${rows.length} rows`);
       return rows;
     } catch (error) {
       lastError = error;
       if (attempt < MAX_RETRIES) {
         console.warn(`[RETRY] ${account.accountId} attempt=${attempt} failed, retrying...`);
+        const delayMs = attempt * 5_000;
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, delayMs);
+          t.unref();
+        });
       }
     }
   }
@@ -1464,12 +1479,12 @@ async function main(): Promise<void> {
     }
   } finally {
     await Promise.race([
-      browser.close(),
+      browser.close().catch(() => undefined),
       new Promise<void>((resolve) => {
         const t = setTimeout(resolve, 15_000);
         t.unref();
       }),
-    ]).catch(() => undefined);
+    ]);
   }
 
   const now = new Date().toISOString().replaceAll(':', '-');

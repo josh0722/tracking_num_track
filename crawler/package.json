@@ -8,7 +8,8 @@
     "fill:sheet2-delivery": "python3 scripts/mall/fill_sheet2_delivery.py",
     "run:manual-updater": "python3 scripts/mall/manual_update_app.py",
     "build:manual-updater-app": "bash scripts/mall/build_manual_updater_app.sh",
-    "build:windows-bundle": "powershell -ExecutionPolicy Bypass -File scripts/mall/build_windows_bundle.ps1"
+    "build:windows-bundle": "powershell -ExecutionPolicy Bypass -File scripts/mall/build_windows_bundle.ps1",
+    "test": "node --import tsx --test scripts/mall/*.test.ts"
   },
   "devDependencies": {
     "p-limit": "^6.1.0",
