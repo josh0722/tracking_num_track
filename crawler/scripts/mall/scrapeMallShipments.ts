@@ -1386,9 +1386,10 @@ async function scrapeAccountWithRetry(
       debugLog(debug, `start account=${account.accountId}`);
       const rows = await Promise.race([
         scrapeAccount({ browser, account, config, debug, targetOrderFilter }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('account timeout (180s)')), 180_000),
-        ),
+        new Promise<never>((_, reject) => {
+          const t = setTimeout(() => reject(new Error('account timeout (180s)')), 180_000);
+          t.unref();
+        }),
       ]);
       console.log(`[OK] ${account.accountId} - collected ${rows.length} rows`);
       return rows;
