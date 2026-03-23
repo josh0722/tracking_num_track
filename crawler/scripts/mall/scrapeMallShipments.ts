@@ -1360,7 +1360,10 @@ async function scrapeAccount(params: {
 
     return [...tabRows, ...cancelRows];
   } finally {
-    await context.close();
+    await Promise.race([
+      context.close(),
+      new Promise<void>((resolve) => setTimeout(resolve, 10_000)),
+    ]).catch(() => undefined);
   }
 }
 
@@ -1381,7 +1384,12 @@ async function scrapeAccountWithRetry(
         debugLog(debug, `retry attempt=${attempt} account=${account.accountId}`);
       }
       debugLog(debug, `start account=${account.accountId}`);
-      const rows = await scrapeAccount({ browser, account, config, debug, targetOrderFilter });
+      const rows = await Promise.race([
+        scrapeAccount({ browser, account, config, debug, targetOrderFilter }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('account timeout (180s)')), 180_000),
+        ),
+      ]);
       console.log(`[OK] ${account.accountId} - collected ${rows.length} rows`);
       return rows;
     } catch (error) {
