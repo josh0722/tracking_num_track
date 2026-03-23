@@ -1463,7 +1463,13 @@ async function main(): Promise<void> {
       // 에러는 scrapeAccountWithRetry 내에서 이미 로깅됨
     }
   } finally {
-    await browser.close();
+    await Promise.race([
+      browser.close(),
+      new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, 15_000);
+        t.unref();
+      }),
+    ]).catch(() => undefined);
   }
 
   const now = new Date().toISOString().replaceAll(':', '-');
