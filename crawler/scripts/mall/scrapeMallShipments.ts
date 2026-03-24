@@ -1242,8 +1242,11 @@ async function scrapeAccount(params: {
     loginPage.setDefaultTimeout(config.timeoutMs);
 
     try {
+      console.log(`[INFO] ${account.accountId} logging in (username=${account.username})...`);
       await login(loginPage, account, config);
+      console.log(`[INFO] ${account.accountId} login success`);
     } catch (error) {
+      console.error(`[ERROR] ${account.accountId} login failed:`, error instanceof Error ? error.message : String(error));
       if (debug.saveArtifactsOnError) {
         await captureDebugSnapshot({
           debug,
@@ -1405,6 +1408,7 @@ async function scrapeAccountWithRetry(
       return rows;
     } catch (error) {
       lastError = error;
+      console.error(`[ERROR] ${account.accountId} attempt=${attempt} error:`, error instanceof Error ? error.message : String(error));
       if (attempt < MAX_RETRIES) {
         console.warn(`[RETRY] ${account.accountId} attempt=${attempt} failed, retrying...`);
         const delayMs = attempt * 5_000;
@@ -1449,15 +1453,26 @@ async function main(): Promise<void> {
     await fs.mkdir(debug.dir, { recursive: true });
   }
 
-  const browser = await chromium.launch({
-    headless: config.headless,
-    slowMo: config.slowMoMs,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--disable-gpu',
-      '--disable-dev-shm-usage',
-    ],
-  });
+  console.log('[INFO] launching browser...');
+  console.log(`[INFO] PLAYWRIGHT_BROWSERS_PATH=${process.env.PLAYWRIGHT_BROWSERS_PATH ?? '(unset)'}`);
+  console.log(`[INFO] headless=${config.headless}`);
+  let browser: Browser;
+  try {
+    browser = await chromium.launch({
+      headless: config.headless,
+      slowMo: config.slowMoMs,
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--no-sandbox',
+      ],
+    });
+    console.log('[INFO] browser launched successfully');
+  } catch (launchError) {
+    console.error('[FATAL] browser launch failed:', launchError);
+    throw launchError;
+  }
 
   const allRows: ScrapedItem[] = [];
 

@@ -243,11 +243,20 @@ def collect_targets(sheet) -> tuple[list[TargetRow], int]:
         invoice = sheet.cell(row_idx, INVOICE_COL).value
 
         if not order_no or not username or not password:
+            missing = []
+            if not order_no:
+                missing.append("order_no(F)")
+            if not username:
+                missing.append("username(W)")
+            if not password:
+                missing.append("password(X)")
+            print(f"[SKIP] row {row_idx}: 필수 값 누락 ({', '.join(missing)})")
             continue
 
         # 요구사항: 택배사(AB), 송장번호(AC)가 모두 빈 행만 처리
         if not is_blank(carrier) or not is_blank(invoice):
             skipped_prefilled_rows += 1
+            print(f"[SKIP] row {row_idx}: 이미 택배사/송장번호 입력됨 (carrier={carrier}, invoice={invoice})")
             continue
 
         targets.append(
@@ -524,8 +533,11 @@ def main() -> None:
         print(f"[DONE] output excel : {output_path}")
         raise SystemExit(0)
 
+    print(f"[INFO] 처리 대상: {len(targets)}건, 이미 입력됨(skip): {skipped_prefilled_rows}건")
     accounts, account_id_to_cred, account_warnings = build_accounts(targets)
     target_orders_by_username = build_target_orders_by_username(targets)
+    total_target_orders = sum(len(v) for v in target_orders_by_username.values())
+    print(f"[INFO] 계정 수: {len(accounts)}, 타겟 주문 수: {total_target_orders}")
     for warning in account_warnings:
         print(f"[WARN] {warning}")
 
