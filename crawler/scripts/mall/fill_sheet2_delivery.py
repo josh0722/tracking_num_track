@@ -564,35 +564,48 @@ def main() -> None:
 
         crawl_log_path = run_dir / "crawl-output.log"
         try:
-            if npm_cmd:
+            # node + tsx 직접 실행을 우선 사용 (번들 환경에서 npm.cmd는 불완전할 수 있음)
+            if node_cmd and tsx_cli.exists():
+                crawl_cmd = [node_cmd, str(tsx_cli), str(repo_root / "scripts" / "mall" / "scrapeMallShipments.ts")]
+            elif npm_cmd:
                 crawl_cmd = [npm_cmd, "run", "scrape:mall"]
             else:
-                if not node_cmd or not tsx_cli.exists():
-                    raise RuntimeError("npm 없이 실행하려면 node와 node_modules/tsx가 필요합니다.")
-                crawl_cmd = [node_cmd, str(tsx_cli), str(repo_root / "scripts" / "mall" / "scrapeMallShipments.ts")]
+                raise RuntimeError(
+                    "크롤러를 실행할 수 없습니다. node+tsx 또는 npm이 필요합니다.\n"
+                    f"node_cmd={node_cmd}, tsx_cli={tsx_cli}, npm_cmd={npm_cmd}"
+                )
 
             print(f"[INFO] 크롤러 실행: {' '.join(crawl_cmd)}")
             print(f"[INFO] 크롤러 로그: {crawl_log_path}")
+
+            creation_flags = 0
+            if os.name == "nt":
+                creation_flags = subprocess.CREATE_NO_WINDOW
+
+            proc = subprocess.Popen(
+                crawl_cmd,
+                cwd=repo_root,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                creationflags=creation_flags,
+            )
             with open(crawl_log_path, "w", encoding="utf-8") as log_file:
-                proc = subprocess.run(
-                    crawl_cmd,
-                    cwd=repo_root,
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    timeout=1200,
-                )
-                log_file.write(proc.stdout or "")
-                # 콘솔에도 출력
-                if proc.stdout:
-                    print(proc.stdout, end="")
-                if proc.returncode != 0:
-                    raise subprocess.CalledProcessError(proc.returncode, crawl_cmd)
-        except subprocess.TimeoutExpired as exc:
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    log_file.write(line)
+                    log_file.flush()
+                    print(line, end="")
+            return_code = proc.wait(timeout=1200)
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, crawl_cmd)
+        except subprocess.TimeoutExpired:
+            if proc is not None:
+                proc.kill()
             raise RuntimeError(
                 "크롤링 시간 초과 (20분): 프로세스가 응답하지 않아 종료했습니다."
-            ) from exc
+            )
         except subprocess.CalledProcessError as exc:
             # 로그 파일 내용을 에러 메시지에 포함
             log_tail = ""

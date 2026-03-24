@@ -1455,7 +1455,26 @@ async function main(): Promise<void> {
 
   console.log('[INFO] launching browser...');
   console.log(`[INFO] PLAYWRIGHT_BROWSERS_PATH=${process.env.PLAYWRIGHT_BROWSERS_PATH ?? '(unset)'}`);
+  console.log(`[INFO] cwd=${process.cwd()}`);
   console.log(`[INFO] headless=${config.headless}`);
+
+  // Playwright 브라우저 실행 파일 존재 확인
+  try {
+    const execPath = chromium.executablePath();
+    console.log(`[INFO] chromium executablePath=${execPath}`);
+    try {
+      await fs.access(execPath);
+      console.log('[INFO] chromium executable exists');
+    } catch {
+      console.error(`[FATAL] chromium executable NOT found at: ${execPath}`);
+      console.error('[FATAL] Playwright 브라우저가 설치되지 않았습니다. npx playwright install chromium 실행 필요');
+      throw new Error(`Chromium not found: ${execPath}`);
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('Chromium not found')) throw e;
+    console.warn('[WARN] could not check chromium path:', e);
+  }
+
   let browser: Browser;
   try {
     browser = await chromium.launch({
@@ -1466,6 +1485,7 @@ async function main(): Promise<void> {
         '--disable-gpu',
         '--disable-dev-shm-usage',
         '--no-sandbox',
+        '--disable-setuid-sandbox',
       ],
     });
     console.log('[INFO] browser launched successfully');

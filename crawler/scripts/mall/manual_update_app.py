@@ -337,6 +337,9 @@ class ManualUpdateApp:
                 self.log_queue.put(("log", f"[INFO] worker: {worker_exe}"))
             else:
                 self.log_queue.put(("log", f"[INFO] python: {cmd[0]}"))
+            creation_flags = 0
+            if os.name == "nt":
+                creation_flags = subprocess.CREATE_NO_WINDOW
             self._process = subprocess.Popen(
                 cmd,
                 cwd=self.repo_root,
@@ -344,6 +347,7 @@ class ManualUpdateApp:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                creationflags=creation_flags,
             )
         except Exception as exc:
             self.log_queue.put(("error", f"프로그램 실행 실패: {exc}"))
