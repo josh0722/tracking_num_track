@@ -562,6 +562,7 @@ def main() -> None:
         if path_segments:
             env["PATH"] = f"{os.pathsep.join(path_segments)}{os.pathsep}{env.get('PATH', '')}"
 
+        crawl_log_path = run_dir / "crawl-output.log"
         try:
             if npm_cmd:
                 crawl_cmd = [npm_cmd, "run", "scrape:mall"]
@@ -570,24 +571,45 @@ def main() -> None:
                     raise RuntimeError("npm 없이 실행하려면 node와 node_modules/tsx가 필요합니다.")
                 crawl_cmd = [node_cmd, str(tsx_cli), str(repo_root / "scripts" / "mall" / "scrapeMallShipments.ts")]
 
-            subprocess.run(
-                crawl_cmd,
-                cwd=repo_root,
-                env=env,
-                check=True,
-                timeout=1200,
-            )
+            print(f"[INFO] 크롤러 실행: {' '.join(crawl_cmd)}")
+            print(f"[INFO] 크롤러 로그: {crawl_log_path}")
+            with open(crawl_log_path, "w", encoding="utf-8") as log_file:
+                proc = subprocess.run(
+                    crawl_cmd,
+                    cwd=repo_root,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=1200,
+                )
+                log_file.write(proc.stdout or "")
+                # 콘솔에도 출력
+                if proc.stdout:
+                    print(proc.stdout, end="")
+                if proc.returncode != 0:
+                    raise subprocess.CalledProcessError(proc.returncode, crawl_cmd)
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
                 "크롤링 시간 초과 (20분): 프로세스가 응답하지 않아 종료했습니다."
             ) from exc
         except subprocess.CalledProcessError as exc:
+            # 로그 파일 내용을 에러 메시지에 포함
+            log_tail = ""
+            if crawl_log_path.exists():
+                log_content = crawl_log_path.read_text(encoding="utf-8", errors="replace")
+                lines = log_content.strip().splitlines()
+                log_tail = "\n".join(lines[-20:]) if lines else "(빈 로그)"
             if exc.returncode == 127:
                 raise RuntimeError(
                     "크롤링 실행 도구를 찾지 못했습니다. 의존성 설치 후 다시 시도해주세요.\n"
                     f"cd {repo_root} && npm install"
                 ) from exc
-            raise RuntimeError(f"크롤링 실행 실패 (exit code: {exc.returncode})") from exc
+            raise RuntimeError(
+                f"크롤링 실행 실패 (exit code: {exc.returncode})\n"
+                f"로그 파일: {crawl_log_path}\n"
+                f"--- 마지막 로그 ---\n{log_tail}"
+            ) from exc
         result_jsons = sorted(run_dir.glob("results-*.json"), key=lambda p: p.stat().st_mtime)
         if not result_jsons:
             raise RuntimeError(f"크롤링 결과 JSON을 찾지 못했습니다: {run_dir}")
