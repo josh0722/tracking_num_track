@@ -7,6 +7,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from collections import OrderedDict
 from copy import copy
 from dataclasses import dataclass
@@ -554,6 +556,9 @@ def main() -> None:
         env["MALL_ACCOUNTS_PATH"] = str(accounts_path)
         env["MALL_OUTPUT_DIR"] = str(run_dir)
         env["MALL_TARGET_ORDERS_JSON"] = json.dumps(target_orders_by_username, ensure_ascii=False)
+        # 한글 경로/메시지가 stdout에 섞여도 cp949 디코딩으로 죽지 않도록 강제 UTF-8
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
         path_segments = []
         if npm_cmd:
             path_segments.append(str(Path(npm_cmd).expanduser().parent))
@@ -582,6 +587,16 @@ def main() -> None:
             if os.name == "nt":
                 creation_flags = subprocess.CREATE_NO_WINDOW
 
+            # 타임아웃 정책:
+            #  - total_timeout: 계정 수에 비례 (계정당 90초, 최소 30분, 최대 4시간)
+            #  - idle_timeout: stdout 무출력이 이 시간을 넘으면 hang으로 간주하고 종료
+            total_timeout_s = max(1800, min(len(accounts) * 90, 14400))
+            idle_timeout_s = 300  # 5분간 한 줄도 안 나오면 hang
+            print(
+                f"[INFO] 크롤러 타임아웃: total={total_timeout_s}s, idle={idle_timeout_s}s "
+                f"(accounts={len(accounts)})"
+            )
+
             proc = subprocess.Popen(
                 crawl_cmd,
                 cwd=repo_root,
@@ -589,22 +604,74 @@ def main() -> None:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 creationflags=creation_flags,
             )
-            with open(crawl_log_path, "w", encoding="utf-8") as log_file:
-                assert proc.stdout is not None
-                for line in proc.stdout:
-                    log_file.write(line)
-                    log_file.flush()
-                    print(line, end="")
-            return_code = proc.wait(timeout=1200)
+
+            last_output_at = time.monotonic()
+            start_at = last_output_at
+            output_lock = threading.Lock()
+            reader_done = threading.Event()
+            reader_error: list[BaseException] = []
+
+            def _reader() -> None:
+                nonlocal last_output_at
+                try:
+                    assert proc.stdout is not None
+                    with open(crawl_log_path, "w", encoding="utf-8") as log_file:
+                        for line in proc.stdout:
+                            log_file.write(line)
+                            log_file.flush()
+                            print(line, end="")
+                            with output_lock:
+                                last_output_at = time.monotonic()
+                except BaseException as e:  # noqa: BLE001
+                    reader_error.append(e)
+                finally:
+                    reader_done.set()
+
+            reader_thread = threading.Thread(target=_reader, daemon=True)
+            reader_thread.start()
+
+            kill_reason = ""
+            while not reader_done.wait(timeout=5):
+                now = time.monotonic()
+                with output_lock:
+                    idle = now - last_output_at
+                elapsed = now - start_at
+                if idle > idle_timeout_s:
+                    kill_reason = (
+                        f"무응답 {int(idle)}초 동안 출력 없음 "
+                        f"(idle 임계 {idle_timeout_s}초)"
+                    )
+                    break
+                if elapsed > total_timeout_s:
+                    kill_reason = (
+                        f"총 실행 {int(elapsed)}초 초과 "
+                        f"(총 임계 {total_timeout_s}초, accounts={len(accounts)})"
+                    )
+                    break
+
+            if kill_reason:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                reader_thread.join(timeout=10)
+                raise RuntimeError(f"크롤링 강제 종료: {kill_reason}")
+
+            reader_thread.join(timeout=10)
+            return_code = proc.wait(timeout=30)
+            if reader_error:
+                raise RuntimeError(f"크롤러 stdout 읽기 실패: {reader_error[0]}")
             if return_code != 0:
                 raise subprocess.CalledProcessError(return_code, crawl_cmd)
         except subprocess.TimeoutExpired:
             if proc is not None:
                 proc.kill()
             raise RuntimeError(
-                "크롤링 시간 초과 (20분): 프로세스가 응답하지 않아 종료했습니다."
+                "크롤링 프로세스 정리 중 시간 초과: 프로세스가 응답하지 않아 종료했습니다."
             )
         except subprocess.CalledProcessError as exc:
             # 로그 파일 내용을 에러 메시지에 포함

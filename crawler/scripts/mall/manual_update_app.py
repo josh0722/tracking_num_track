@@ -311,6 +311,9 @@ class ManualUpdateApp:
         try:
             env = os.environ.copy()
             env["MALL_REPO_ROOT"] = str(self.repo_root)
+            # 한글 경로가 포함된 환경에서 워커 stdout이 cp949로 디코딩되어 죽지 않도록 UTF-8 강제
+            env["PYTHONIOENCODING"] = "utf-8"
+            env["PYTHONUTF8"] = "1"
             if not env.get("MALL_NPM_BIN"):
                 for npm_candidate in (
                     str(self.repo_root / "runtime" / "node" / "npm.cmd"),
@@ -347,6 +350,8 @@ class ManualUpdateApp:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 creationflags=creation_flags,
             )
         except Exception as exc:
