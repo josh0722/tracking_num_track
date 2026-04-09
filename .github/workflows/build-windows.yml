@@ -24,29 +24,47 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Build Windows Bundle
+      - name: Build Windows Bundle (ExcelDeliveryUpdater)
         shell: pwsh
         env:
           PLAYWRIGHT_BROWSERS_PATH: '0'
         run: |
           pwsh -ExecutionPolicy Bypass -File crawler/scripts/mall/build_windows_bundle.ps1
 
-      - name: Zip bundle
+      - name: Build Windows Bundle (SavingsLookup)
+        shell: pwsh
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: '0'
+        run: |
+          pwsh -ExecutionPolicy Bypass -File crawler/scripts/mall/build_savings_bundle.ps1
+
+      - name: Zip bundles
         shell: pwsh
         run: |
           Copy-Item crawler/dist/windows-bundle ExcelDeliveryUpdater -Recurse
           Compress-Archive -Path ExcelDeliveryUpdater -DestinationPath ExcelDeliveryUpdater-windows.zip
+          Copy-Item crawler/dist/savings-bundle SavingsLookup -Recurse
+          Compress-Archive -Path SavingsLookup -DestinationPath SavingsLookup-windows.zip
 
-      - name: Upload artifact
+      - name: Upload ExcelDeliveryUpdater artifact
         uses: actions/upload-artifact@v7
         with:
           name: ExcelDeliveryUpdater-windows
           path: ExcelDeliveryUpdater-windows.zip
           retention-days: 30
 
+      - name: Upload SavingsLookup artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: SavingsLookup-windows
+          path: SavingsLookup-windows.zip
+          retention-days: 30
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ExcelDeliveryUpdater-windows.zip
+          files: |
+            ExcelDeliveryUpdater-windows.zip
+            SavingsLookup-windows.zip
           generate_release_notes: false
