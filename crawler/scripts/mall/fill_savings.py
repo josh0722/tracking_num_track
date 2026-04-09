@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 # fill_sheet2_delivery.py 의 node/npm 탐색 로직을 재사용한다.
@@ -50,11 +50,110 @@ COMPLETE_SHEET_NAME = "완료"
 DATA_SHEET_NAME = "데이터"
 
 HEADER = ["순번", "아이디", "패스워드", "이름", "소멸예정일", "금액", "멤버십할인", "비고"]
-MERGE_COLS_MULTI = [SEQ_COL, USERNAME_COL, PASSWORD_COL, NAME_COL, MEMBERSHIP_COL, NOTE_COL]
+# 템플릿과 동일하게 A/B/C/D/G 만 vertical merge (H 는 병합 X)
+MERGE_COLS_MULTI = [SEQ_COL, USERNAME_COL, PASSWORD_COL, NAME_COL, MEMBERSHIP_COL]
 
-HEADER_FILL = PatternFill(start_color="FFD9E1F2", end_color="FFD9E1F2", fill_type="solid")
-HEADER_FONT = Font(bold=True)
-CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+# ─── 템플릿 "완료" 시트 서식 복제 ────────────────────────────────────────
+# 원본 템플릿 `SK스토아 적립금 조회.xlsx` 의 완료 시트를 기준으로 한다.
+
+_FONT_GULIM = Font(name="맑은 고딕", size=11, bold=False)
+_FONT_GULIM_BOLD = Font(name="맑은 고딕", size=11, bold=True)
+_FONT_ARIAL = Font(name="Arial", size=11, bold=False)
+
+_FILL_HEADER = PatternFill(start_color="FFD9E1F2", end_color="FFD9E1F2", fill_type="solid")
+_FILL_BLUE = PatternFill(start_color="FF9FC5E8", end_color="FF9FC5E8", fill_type="solid")
+_FILL_GREEN = PatternFill(start_color="FF00FF00", end_color="FF00FF00", fill_type="solid")
+_FILL_WHITE = PatternFill(start_color="FFFFFFFF", end_color="FFFFFFFF", fill_type="solid")
+
+_ALIGN_CENTER = Alignment(horizontal="center", vertical="center")
+_ALIGN_CENTER_WRAP = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+_SIDE_THIN = Side(style="thin", color="FF000000")
+_SIDE_THICK = Side(style="thick", color="FF000000")
+_BORDER_THIN = Border(left=_SIDE_THIN, right=_SIDE_THIN, top=_SIDE_THIN, bottom=_SIDE_THIN)
+# D 컬럼은 이름과 다른 데이터를 구분하기 위해 오른쪽이 두꺼움
+_BORDER_D = Border(left=_SIDE_THIN, right=_SIDE_THICK, top=_SIDE_THIN, bottom=_SIDE_THIN)
+
+_NF_COMMA = "#,##0_);[Red](#,##0)"
+_NF_TEXT = "@"
+
+# 컬럼 너비 (템플릿에서 그대로 추출)
+_COL_WIDTHS = {1: 4.66, 2: 25.16, 3: 15.66, 4: 9.0, 5: 10.66, 6: 9.0, 7: 12.0, 8: 11.66}
+
+
+def _apply_header_style(ws) -> None:
+    for col_idx, title in enumerate(HEADER, start=1):
+        c = ws.cell(1, col_idx, title)
+        c.font = _FONT_GULIM_BOLD
+        c.fill = _FILL_HEADER
+        c.alignment = _ALIGN_CENTER
+        c.border = _BORDER_D if col_idx == NAME_COL else _BORDER_THIN
+        if col_idx in (EXPIRE_AMOUNT_COL, MEMBERSHIP_COL):
+            c.number_format = _NF_COMMA
+        elif col_idx == USERNAME_COL:
+            c.number_format = _NF_TEXT
+
+
+def _fill_from_rgb(rgb: str, default: PatternFill) -> PatternFill:
+    """`데이터` 시트에서 추출한 RGB 문자열(예: 'FF9FC5E8')로 PatternFill 생성."""
+    if not rgb:
+        return default
+    clean = rgb.upper()
+    if len(clean) == 6:
+        clean = "FF" + clean
+    return PatternFill(start_color=clean, end_color=clean, fill_type="solid")
+
+
+def _style_body_cell(
+    cell,
+    col_idx: int,
+    *,
+    username_fill_rgb: str = "",
+    password_fill_rgb: str = "",
+) -> None:
+    """완료 시트 본문 한 셀에 템플릿과 동일한 서식을 적용한다."""
+    # 기본 테두리
+    cell.border = _BORDER_D if col_idx == NAME_COL else _BORDER_THIN
+
+    # 폰트 / 정렬
+    if col_idx in (USERNAME_COL, PASSWORD_COL, NAME_COL):
+        cell.font = _FONT_ARIAL
+    else:
+        cell.font = _FONT_GULIM
+    cell.alignment = _ALIGN_CENTER_WRAP if col_idx == NAME_COL else _ALIGN_CENTER
+
+    # 채우기 — 원본 데이터 시트의 색을 그대로 보존, 없으면 기본 파랑
+    if col_idx == USERNAME_COL:
+        cell.fill = _fill_from_rgb(username_fill_rgb, _FILL_BLUE)
+    elif col_idx == PASSWORD_COL:
+        cell.fill = _fill_from_rgb(password_fill_rgb, _FILL_BLUE)
+    elif col_idx == NAME_COL:
+        cell.fill = _FILL_WHITE
+
+    # 숫자 포맷
+    if col_idx in (EXPIRE_AMOUNT_COL, MEMBERSHIP_COL):
+        cell.number_format = _NF_COMMA
+    elif col_idx == USERNAME_COL:
+        cell.number_format = _NF_TEXT
+
+
+def _write_body_row(
+    ws,
+    row_idx: int,
+    values: dict[int, Any],
+    *,
+    username_fill_rgb: str = "",
+    password_fill_rgb: str = "",
+) -> None:
+    """한 행에 값을 채우고 모든 컬럼(A~H)에 서식을 적용한다."""
+    for col_idx in range(1, len(HEADER) + 1):
+        cell = ws.cell(row_idx, col_idx, values.get(col_idx))
+        _style_body_cell(
+            cell,
+            col_idx,
+            username_fill_rgb=username_fill_rgb,
+            password_fill_rgb=password_fill_rgb,
+        )
 
 
 @dataclass
@@ -66,6 +165,9 @@ class Entry:
     skip: bool
     skip_reason: str
     account_id: str  # skip 이면 ""
+    # 원본 `데이터` 시트의 B/C 셀 채우기 색을 그대로 보존해 완료 시트에 반영한다.
+    username_fill_rgb: str  # "" 이면 기본(파랑)
+    password_fill_rgb: str
 
 
 def normalize_text(value: Any) -> str:
@@ -138,6 +240,8 @@ def collect_entries(ws) -> list[Entry]:
                 skip=skip,
                 skip_reason=reason,
                 account_id=account_id,
+                username_fill_rgb=_fill_hex(username_cell),
+                password_fill_rgb=_fill_hex(password_cell),
             )
         )
     return entries
@@ -306,12 +410,7 @@ def build_complete_sheet(wb, entries: list[Entry], results_by_username: dict[str
         del wb[COMPLETE_SHEET_NAME]
     ws = wb.create_sheet(COMPLETE_SHEET_NAME)
 
-    # 헤더
-    for idx, title in enumerate(HEADER, start=1):
-        c = ws.cell(1, idx, title)
-        c.fill = HEADER_FILL
-        c.font = HEADER_FONT
-        c.alignment = CENTER
+    _apply_header_style(ws)
 
     summary = {
         "total_entries": len(entries),
@@ -324,16 +423,28 @@ def build_complete_sheet(wb, entries: list[Entry], results_by_username: dict[str
 
     current_row = 2
     for entry in entries:
+        entry_fills = {
+            "username_fill_rgb": entry.username_fill_rgb,
+            "password_fill_rgb": entry.password_fill_rgb,
+        }
+
         if entry.skip:
             summary["skipped_entries"] += 1
-            ws.cell(current_row, SEQ_COL, entry.seq)
-            ws.cell(current_row, USERNAME_COL, entry.username or None)
-            ws.cell(current_row, PASSWORD_COL, entry.password or None)
-            ws.cell(current_row, NAME_COL, entry.name or None)
-            ws.cell(current_row, EXPIRE_DATE_COL, "조회불가")
-            ws.cell(current_row, EXPIRE_AMOUNT_COL, "조회불가")
-            ws.cell(current_row, MEMBERSHIP_COL, "조회불가")
-            ws.cell(current_row, NOTE_COL, None)
+            _write_body_row(
+                ws,
+                current_row,
+                {
+                    SEQ_COL: entry.seq,
+                    USERNAME_COL: entry.username or None,
+                    PASSWORD_COL: entry.password or None,
+                    NAME_COL: entry.name or None,
+                    EXPIRE_DATE_COL: "조회불가",
+                    EXPIRE_AMOUNT_COL: "조회불가",
+                    MEMBERSHIP_COL: "조회불가",
+                    NOTE_COL: None,
+                },
+                **entry_fills,
+            )
             current_row += 1
             summary["total_rows_written"] += 1
             continue
@@ -341,14 +452,21 @@ def build_complete_sheet(wb, entries: list[Entry], results_by_username: dict[str
         row_data = results_by_username.get(entry.username)
         if not row_data or row_data.get("error"):
             summary["error_entries"] += 1
-            ws.cell(current_row, SEQ_COL, entry.seq)
-            ws.cell(current_row, USERNAME_COL, entry.username)
-            ws.cell(current_row, PASSWORD_COL, entry.password)
-            ws.cell(current_row, NAME_COL, entry.name or None)
-            ws.cell(current_row, EXPIRE_DATE_COL, "조회불가")
-            ws.cell(current_row, EXPIRE_AMOUNT_COL, "조회불가")
-            ws.cell(current_row, MEMBERSHIP_COL, "조회불가")
-            ws.cell(current_row, NOTE_COL, None)
+            _write_body_row(
+                ws,
+                current_row,
+                {
+                    SEQ_COL: entry.seq,
+                    USERNAME_COL: entry.username,
+                    PASSWORD_COL: entry.password,
+                    NAME_COL: entry.name or None,
+                    EXPIRE_DATE_COL: "조회불가",
+                    EXPIRE_AMOUNT_COL: "조회불가",
+                    MEMBERSHIP_COL: "조회불가",
+                    NOTE_COL: None,
+                },
+                **entry_fills,
+            )
             current_row += 1
             summary["total_rows_written"] += 1
             continue
@@ -358,14 +476,21 @@ def build_complete_sheet(wb, entries: list[Entry], results_by_username: dict[str
         summary["ok_entries"] += 1
 
         if not expirations:
-            ws.cell(current_row, SEQ_COL, entry.seq)
-            ws.cell(current_row, USERNAME_COL, entry.username)
-            ws.cell(current_row, PASSWORD_COL, entry.password)
-            ws.cell(current_row, NAME_COL, entry.name or None)
-            ws.cell(current_row, EXPIRE_DATE_COL, None)
-            ws.cell(current_row, EXPIRE_AMOUNT_COL, None)
-            ws.cell(current_row, MEMBERSHIP_COL, membership)
-            ws.cell(current_row, NOTE_COL, None)
+            _write_body_row(
+                ws,
+                current_row,
+                {
+                    SEQ_COL: entry.seq,
+                    USERNAME_COL: entry.username,
+                    PASSWORD_COL: entry.password,
+                    NAME_COL: entry.name or None,
+                    EXPIRE_DATE_COL: None,
+                    EXPIRE_AMOUNT_COL: None,
+                    MEMBERSHIP_COL: membership,
+                    NOTE_COL: None,
+                },
+                **entry_fills,
+            )
             current_row += 1
             summary["total_rows_written"] += 1
             continue
@@ -376,14 +501,29 @@ def build_complete_sheet(wb, entries: list[Entry], results_by_username: dict[str
         start_row = current_row
         for i, exp in enumerate(expirations):
             if i == 0:
-                ws.cell(current_row, SEQ_COL, entry.seq)
-                ws.cell(current_row, USERNAME_COL, entry.username)
-                ws.cell(current_row, PASSWORD_COL, entry.password)
-                ws.cell(current_row, NAME_COL, entry.name or None)
-                ws.cell(current_row, MEMBERSHIP_COL, membership)
-                ws.cell(current_row, NOTE_COL, None)
-            ws.cell(current_row, EXPIRE_DATE_COL, exp.get("expireDate") or None)
-            ws.cell(current_row, EXPIRE_AMOUNT_COL, exp.get("amount"))
+                values = {
+                    SEQ_COL: entry.seq,
+                    USERNAME_COL: entry.username,
+                    PASSWORD_COL: entry.password,
+                    NAME_COL: entry.name or None,
+                    EXPIRE_DATE_COL: exp.get("expireDate") or None,
+                    EXPIRE_AMOUNT_COL: exp.get("amount"),
+                    MEMBERSHIP_COL: membership,
+                    NOTE_COL: None,
+                }
+            else:
+                # 병합될 컬럼들은 openpyxl 규칙상 좌상단 셀만 값을 갖고 나머지는 None 이어야 한다.
+                values = {
+                    SEQ_COL: None,
+                    USERNAME_COL: None,
+                    PASSWORD_COL: None,
+                    NAME_COL: None,
+                    EXPIRE_DATE_COL: exp.get("expireDate") or None,
+                    EXPIRE_AMOUNT_COL: exp.get("amount"),
+                    MEMBERSHIP_COL: None,
+                    NOTE_COL: None,
+                }
+            _write_body_row(ws, current_row, values, **entry_fills)
             current_row += 1
             summary["total_rows_written"] += 1
 
@@ -396,13 +536,9 @@ def build_complete_sheet(wb, entries: list[Entry], results_by_username: dict[str
                     end_row=end_row,
                     end_column=col,
                 )
-            # 병합 셀 중앙 정렬
-            for col in MERGE_COLS_MULTI:
-                ws.cell(start_row, col).alignment = CENTER
 
-    # 열 너비 대충 맞추기
-    widths = {1: 6, 2: 26, 3: 18, 4: 10, 5: 14, 6: 12, 7: 12, 8: 14}
-    for col_idx, width in widths.items():
+    # 컬럼 너비 적용
+    for col_idx, width in _COL_WIDTHS.items():
         ws.column_dimensions[get_column_letter(col_idx)].width = width
 
     return summary
