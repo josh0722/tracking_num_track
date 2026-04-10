@@ -159,10 +159,22 @@ export async function login(page: Page, account: Account, config: LoginConfig): 
     if (!(await waitVisible(selector, shortTimeout))) {
       continue;
     }
-    await Promise.all([
-      page.waitForLoadState('domcontentloaded').catch(() => undefined),
-      page.click(selector, { timeout: shortTimeout }),
-    ]);
+    const loc = page.locator(selector).first();
+    try {
+      await Promise.all([
+        page.waitForLoadState('domcontentloaded').catch(() => undefined),
+        loc.click({ timeout: shortTimeout }),
+      ]);
+    } catch {
+      // 오버레이 등으로 일반 클릭이 막힌 경우 (Windows DPI/렌더링 차이 등)
+      // force 클릭 → JS 직접 클릭 순서로 재시도
+      try {
+        await loc.click({ timeout: shortTimeout, force: true });
+      } catch {
+        await loc.evaluate((el) => (el as HTMLElement).click());
+      }
+      await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+    }
     await page.waitForTimeout(300);
     tLoginClicked = true;
     break;
