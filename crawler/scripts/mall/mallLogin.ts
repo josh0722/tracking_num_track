@@ -161,20 +161,19 @@ export async function login(page: Page, account: Account, config: LoginConfig): 
     }
     const loc = page.locator(selector).first();
     try {
-      await Promise.all([
-        page.waitForLoadState('domcontentloaded').catch(() => undefined),
-        loc.click({ timeout: shortTimeout }),
-      ]);
+      await loc.click({ timeout: shortTimeout });
     } catch {
-      // 오버레이 등으로 일반 클릭이 막힌 경우 (Windows DPI/렌더링 차이 등)
-      // force 클릭 → JS 직접 클릭 순서로 재시도
-      try {
-        await loc.click({ timeout: shortTimeout, force: true });
-      } catch {
-        await loc.evaluate((el) => (el as HTMLElement).click());
+      // Windows에서 onclick은 실행됐지만 Playwright가 timeout을 보고하는 경우가 있음.
+      // 잠깐 기다린 후 페이지가 이미 이동했으면 클릭 성공으로 간주.
+      await page.waitForTimeout(600);
+      const stillOnLogin = /skstoa\.com\/member\/login/i.test(page.url());
+      if (stillOnLogin) {
+        // 아직 로그인 페이지 → 실제로 클릭이 안 된 것. force 클릭으로 재시도.
+        await loc.click({ timeout: shortTimeout, force: true }).catch(() => undefined);
       }
-      await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+      // 페이지가 이동했으면 클릭 성공 → 아무것도 하지 않음
     }
+    await page.waitForLoadState('domcontentloaded').catch(() => undefined);
     await page.waitForTimeout(300);
     tLoginClicked = true;
     break;
