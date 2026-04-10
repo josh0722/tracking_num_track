@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """SK스토아 적립금/멤버십할인 조회 GUI.
 
 `manual_update_app.py` 와 UI/스레드 구조가 동일하다. 차이점은:
@@ -9,12 +10,21 @@
 """
 from __future__ import annotations
 
+import sys
+
+# Windows에서 PyInstaller 번들로 실행될 때 stdout/stderr 인코딩을 UTF-8로 강제
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
+
 import os
 import platform
 import queue
 import shutil
 import subprocess
-import sys
 import threading
 from pathlib import Path
 import tkinter as tk

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """SK스토아 적립금/멤버십할인 조회 워커.
 
 - 입력: `SK스토아 적립금 조회.xlsx` (또는 동일 구조의 엑셀)
@@ -14,6 +15,16 @@
 스폰한 뒤, 결과 JSON (`savings-*.json`) 을 읽어 `완료` 시트를 새로 만든다.
 """
 from __future__ import annotations
+
+import sys
+
+# Windows에서 PyInstaller 번들로 실행될 때 stdout/stderr 인코딩을 UTF-8로 강제
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
 
 import argparse
 import json

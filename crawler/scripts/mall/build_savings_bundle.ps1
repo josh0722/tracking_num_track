@@ -24,6 +24,11 @@ python -m pip install pyinstaller openpyxl
 npm install
 npx playwright install chromium
 
+# PyInstaller 빌드 시 UTF-8 인코딩 강제 (한글 깨짐 방지)
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+chcp 65001
+
 python -m PyInstaller --noconfirm --clean --windowed --name SavingsLookup scripts/mall/savings_update_app.py
 python -m PyInstaller --noconfirm --clean --console --onefile --name SavingsWorker scripts/mall/fill_savings.py
 
@@ -63,9 +68,12 @@ if (Test-Path $npmPkgDir) {
 $launcher = @"
 @echo off
 setlocal
+chcp 65001 > nul
 set ROOT=%~dp0
 set MALL_REPO_ROOT=%ROOT%project
 set PLAYWRIGHT_BROWSERS_PATH=0
+set PYTHONUTF8=1
+set PYTHONIOENCODING=utf-8
 if exist "%ROOT%app\SavingsWorker.exe" set MALL_SAVINGS_WORKER_BIN=%ROOT%app\SavingsWorker.exe
 if exist "%ROOT%runtime\node\node.exe" set MALL_NODE_BIN=%ROOT%runtime\node\node.exe
 if exist "%ROOT%runtime\node\npm.cmd" set MALL_NPM_BIN=%ROOT%runtime\node\npm.cmd
