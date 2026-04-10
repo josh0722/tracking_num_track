@@ -21,8 +21,8 @@ import sys
 # Windows에서 PyInstaller 번들로 실행될 때 stdout/stderr 인코딩을 UTF-8로 강제
 if sys.platform == "win32":
     try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     except AttributeError:
         pass
 
@@ -359,7 +359,7 @@ def run_crawler(
                 for line in proc.stdout:
                     log_file.write(line)
                     log_file.flush()
-                    print(line, end="")
+                    print(line, end="", flush=True)
                     with output_lock:
                         last_output_at = time.monotonic()
         except BaseException as e:  # noqa: BLE001

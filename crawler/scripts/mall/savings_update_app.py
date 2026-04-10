@@ -329,6 +329,7 @@ class SavingsUpdateApp:
             env["MALL_REPO_ROOT"] = str(self.repo_root)
             env["PYTHONIOENCODING"] = "utf-8"
             env["PYTHONUTF8"] = "1"
+            env["PYTHONUNBUFFERED"] = "1"
             if not env.get("MALL_NPM_BIN"):
                 for npm_candidate in (
                     str(self.repo_root / "runtime" / "node" / "npm.cmd"),
