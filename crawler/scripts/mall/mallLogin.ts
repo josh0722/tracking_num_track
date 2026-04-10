@@ -143,40 +143,42 @@ export async function login(page: Page, account: Account, config: LoginConfig): 
     throw new Error(`login page unavailable: url=${page.url()}${headlessHint}`);
   }
 
-  // 요구사항 반영: T 로그인 버튼을 우선 시도
-  const tLoginSelectors = unique([
-    config.selectors.login.tLoginButton,
-    'button.sns-tword',
-    'a.sns-tword',
-    '[class*="sns"][class*="tword"]',
-    'button:has-text("T로그인")',
-    'a:has-text("T로그인")',
-    'button:has-text("티로그인")',
-    'a:has-text("티로그인")',
-  ]);
+  // #inputId 가 이미 보이면 T 로그인 버튼 클릭을 건너뛰고 바로 폼 입력으로 진행.
+  // T 로그인 클릭 시 auth.skt-id.co.kr 로 리다이렉트되는데, Windows 에서
+  // UA/platform 불일치 등으로 봇 탐지에 걸려 로그인이 실패하는 문제를 회피한다.
   let tLoginClicked = false;
-  for (const selector of tLoginSelectors) {
-    if (!(await waitVisible(selector, shortTimeout))) {
-      continue;
-    }
-    const loc = page.locator(selector).first();
-    try {
-      await loc.click({ timeout: shortTimeout });
-    } catch {
-      // Windows에서 onclick은 실행됐지만 Playwright가 timeout을 보고하는 경우가 있음.
-      // 잠깐 기다린 후 페이지가 이미 이동했으면 클릭 성공으로 간주.
-      await page.waitForTimeout(600);
-      const stillOnLogin = /skstoa\.com\/member\/login/i.test(page.url());
-      if (stillOnLogin) {
-        // 아직 로그인 페이지 → 실제로 클릭이 안 된 것. force 클릭으로 재시도.
-        await loc.click({ timeout: shortTimeout, force: true }).catch(() => undefined);
+  const idInputAlreadyVisible = await isVisibleNow(config.selectors.login.idInput);
+  if (!idInputAlreadyVisible) {
+    const tLoginSelectors = unique([
+      config.selectors.login.tLoginButton,
+      'button.sns-tword',
+      'a.sns-tword',
+      '[class*="sns"][class*="tword"]',
+      'button:has-text("T로그인")',
+      'a:has-text("T로그인")',
+      'button:has-text("티로그인")',
+      'a:has-text("티로그인")',
+    ]);
+    for (const selector of tLoginSelectors) {
+      if (!(await waitVisible(selector, shortTimeout))) {
+        continue;
       }
-      // 페이지가 이동했으면 클릭 성공 → 아무것도 하지 않음
+      const loc = page.locator(selector).first();
+      try {
+        await loc.click({ timeout: shortTimeout });
+      } catch {
+        // Windows에서 onclick은 실행됐지만 Playwright가 timeout을 보고하는 경우가 있음.
+        await page.waitForTimeout(600);
+        const stillOnLogin = /skstoa\.com\/member\/login/i.test(page.url());
+        if (stillOnLogin) {
+          await loc.click({ timeout: shortTimeout, force: true }).catch(() => undefined);
+        }
+      }
+      await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+      await page.waitForTimeout(300);
+      tLoginClicked = true;
+      break;
     }
-    await page.waitForLoadState('domcontentloaded').catch(() => undefined);
-    await page.waitForTimeout(300);
-    tLoginClicked = true;
-    break;
   }
 
   // 이미 T 로그인 폼이 열린 상태면 버튼이 없을 수 있음
@@ -193,6 +195,16 @@ export async function login(page: Page, account: Account, config: LoginConfig): 
     page.waitForLoadState('domcontentloaded').catch(() => undefined),
     page.click(config.selectors.login.submitButton, { timeout: config.timeoutMs }),
   ]);
+
+  // auth.skt-id.co.kr 에서 SK스토아로 리다이렉트 완료 대기 (T 로그인 경유 시)
+  if (/auth\.skt-id\.co\.kr/i.test(page.url())) {
+    await page
+      .waitForURL((url) => !/auth\.skt-id\.co\.kr/i.test(url.toString()), {
+        timeout: config.timeoutMs,
+      })
+      .catch(() => undefined);
+    await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+  }
 
   const loginReady = await page
     .waitForSelector(config.selectors.login.postLoginReady, { timeout: Math.min(config.timeoutMs, 12_000) })
